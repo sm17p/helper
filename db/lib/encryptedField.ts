@@ -12,7 +12,8 @@ export const encryptedField = customType<{ data: string }>({
     return "bytea";
   },
   toDriver(value: string): Buffer {
-    const fallbackSecret = "fallback-encryption-secret-for-unused-columns";
+    // eslint-disable-next-line no-restricted-properties
+    const fallbackSecret = process.env.ENCRYPT_COLUMN_SECRET ?? "ffffffffffffffffffffffffffffffff";
     return Buffer.from(symmetricEncrypt(value, fallbackSecret));
   },
   fromDriver(value: unknown): string {
@@ -21,7 +22,8 @@ export const encryptedField = customType<{ data: string }>({
 });
 
 export const decryptFieldValue = (value: unknown): string => {
-  const fallbackSecret = "fallback-encryption-secret-for-unused-columns";
+  // eslint-disable-next-line no-restricted-properties
+  const fallbackSecret = process.env.ENCRYPT_COLUMN_SECRET ?? "ffffffffffffffffffffffffffffffff";
   if (typeof value === "string") {
     // Handle PostgreSQL bytea hex format with \x prefix
     if (value.startsWith("\\x")) {
