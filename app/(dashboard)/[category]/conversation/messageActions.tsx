@@ -178,6 +178,10 @@ export const MessageActions = () => {
     }
   }, [showCc]);
 
+  useEffect(() => {
+    editorRef.current?.focus();
+  }, []);
+
   const onToggleCc = useCallback(() => setShowCc((prev) => !prev), []);
 
   const handleSegment = useCallback((segment: string) => {
