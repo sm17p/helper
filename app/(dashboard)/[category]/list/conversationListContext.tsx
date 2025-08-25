@@ -23,7 +23,7 @@ type ConversationListContextType = {
   minimize: () => void;
   moveToNextConversation: () => void;
   moveToPreviousConversation: () => void;
-  removeConversation: ({ moveToNext }?: { moveToNext?: boolean }) => void;
+  removeConversation: (options?: { moveToNext?: boolean }) => void;
   removeConversationKeepActive: () => void;
   navigateToConversation: (conversationSlug: string) => void;
 };
