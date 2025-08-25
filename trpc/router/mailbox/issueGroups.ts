@@ -37,7 +37,7 @@ export const issueGroupsRouter = {
           vipCount: sql<number>`COUNT(CASE WHEN ${platformCustomers.value} >= COALESCE(${mailboxes.vipThreshold}, 999999) * 100 THEN 1 END)::int`,
         })
         .from(issueGroups)
-        .leftJoin(conversations, eq(issueGroups.id, conversations.issueGroupId))
+        .leftJoin(conversations, and(eq(issueGroups.id, conversations.issueGroupId), eq(conversations.status, "open")))
         .leftJoin(platformCustomers, eq(conversations.emailFrom, platformCustomers.email))
         .leftJoin(mailboxes, eq(mailboxes.id, ctx.mailbox.id))
         .groupBy(
