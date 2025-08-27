@@ -1,6 +1,7 @@
 import { isMacOS } from "@tiptap/core";
 import { CornerUpLeft, Eye, Lightbulb, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useHotkeys } from "react-hotkeys-hook";
 import { toast } from "sonner";
 import { create } from "zustand";
 import { useConversationContext } from "@/app/(dashboard)/[category]/conversation/conversationContext";
@@ -12,12 +13,12 @@ import { useFileUpload } from "@/components/fileUploadContext";
 import { GenerateKnowledgeBankDialog } from "@/components/generateKnowledgeBankDialog";
 import { useExpiringLocalStorage } from "@/components/hooks/use-expiring-local-storage";
 import { useSpeechRecognition } from "@/components/hooks/useSpeechRecognition";
+import { isInDialog } from "@/components/isInDialog";
 import { KeyboardShortcut } from "@/components/keyboardShortcut";
 import LabeledInput from "@/components/labeledInput";
 import TipTapEditor, { type TipTapEditorRef } from "@/components/tiptap/editor";
 import { Button } from "@/components/ui/button";
 import { useBreakpoint } from "@/components/useBreakpoint";
-import useKeyboardShortcut from "@/components/useKeyboardShortcut";
 import { parseEmailList } from "@/components/utils/email";
 import { publicConversationChannelId } from "@/lib/realtime/channels";
 import { useBroadcastRealtimeEvent } from "@/lib/realtime/hooks";
@@ -64,6 +65,17 @@ const useKnowledgeBankDialogState = create<
   hide: () => set({ isVisible: false }),
 }));
 
+const useAlternateHotkeyInEditor = (normalKey: string, alternateKey: string, callback: () => void) => {
+  useHotkeys(normalKey, callback, {
+    enabled: () => !isInDialog(),
+  });
+  useHotkeys(alternateKey, callback, {
+    enableOnContentEditable: true,
+    enableOnFormTags: true,
+    enabled: () => !isInDialog(),
+  });
+};
+
 export const MessageActions = () => {
   const { navigateToConversation, removeConversation } = useConversationListContext();
   const { data: conversation, updateStatus } = useConversationContext();
@@ -102,17 +114,23 @@ export const MessageActions = () => {
     },
   });
 
-  useKeyboardShortcut("z", () => {
-    if (conversation?.status === "closed" || conversation?.status === "spam") {
-      updateStatus("open");
-    }
-  });
-  useKeyboardShortcut("s", () => {
+  useHotkeys(
+    "z",
+    () => {
+      if (conversation?.status === "closed" || conversation?.status === "spam") {
+        updateStatus("open");
+      }
+    },
+    { enabled: () => !isInDialog() },
+  );
+
+  useAlternateHotkeyInEditor("s", "mod+shift+s", () => {
     if (conversation?.status !== "spam") {
       updateStatus("spam");
     }
   });
-  useKeyboardShortcut("c", () => {
+
+  useAlternateHotkeyInEditor("c", "mod+shift+c", () => {
     if (conversation?.status !== "closed") {
       updateStatus("closed");
     }
@@ -171,6 +189,7 @@ export const MessageActions = () => {
   const bccRef = useRef<HTMLInputElement>(null);
   const commandInputRef = useRef<HTMLInputElement>(null);
   const editorRef = useRef<TipTapEditorRef | null>(null);
+  const [isEditorFocused, setIsEditorFocused] = useState(false);
 
   useEffect(() => {
     if (showCc) {
@@ -384,7 +403,11 @@ export const MessageActions = () => {
                 disabled={conversation?.status === "closed"}
               >
                 Close
-                {isMacOS() && <KeyboardShortcut className="ml-2 text-sm border-primary/50">C</KeyboardShortcut>}
+                {isMacOS() && (
+                  <KeyboardShortcut className="ml-2 text-sm border-primary/50">
+                    {isEditorFocused ? "⌘⇧C" : "C"}
+                  </KeyboardShortcut>
+                )}
               </Button>
               <Button
                 size={isAboveMd ? "default" : "sm"}
@@ -459,6 +482,7 @@ export const MessageActions = () => {
         placeholder="Type your reply here..."
         defaultContent={initialMessageObject}
         editable={true}
+        onFocusChange={setIsEditorFocused}
         onUpdate={(message, isEmpty) => {
           updateDraftedEmail({ message: isEmpty ? "" : message });
           if (!isEmpty && conversation?.slug) {
