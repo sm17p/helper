@@ -62,7 +62,8 @@ export const GET = withWidgetAuth(async ({ request }, { session, mailbox }) => {
       latestMessageAt: conv.recentMessageAt?.toISOString() || null,
       messageCount: messageCounts.find((m) => m.conversationId === conv.id)?.count || 0,
       isEscalated: !conv.assignedToAI,
-      isUnread: !!conv.recentMessageAt && (!conv.lastReadAt || conv.recentMessageAt > conv.lastReadAt),
+      isUnread:
+        !!conv.recentMessageAt && (!conv.lastReadByCustomerAt || conv.recentMessageAt > conv.lastReadByCustomerAt),
     }))
     .filter((conv) => conv.messageCount > 0);
 
