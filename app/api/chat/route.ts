@@ -12,6 +12,7 @@ import {
   generateConversationSubject,
   getConversationBySlugAndMailbox,
 } from "@/lib/data/conversation";
+import { storeTools } from "@/lib/data/storedTool";
 import { publicConversationChannelId } from "@/lib/realtime/channels";
 import { publishToRealtime } from "@/lib/realtime/publish";
 import { validateAttachments } from "@/lib/shared/attachmentValidation";
@@ -29,6 +30,7 @@ interface ChatRequestBody {
   guideEnabled: boolean;
   isToolResult?: boolean;
   tools?: Record<string, ToolRequestBody>;
+  customerSpecificTools?: boolean;
 }
 
 const getConversation = async (conversationSlug: string, session: WidgetSessionPayload) => {
@@ -53,7 +55,8 @@ const getConversation = async (conversationSlug: string, session: WidgetSessionP
 export const OPTIONS = () => corsOptions("POST");
 
 export const POST = withWidgetAuth(async ({ request }, { session, mailbox }) => {
-  const { message, conversationSlug, readPageTool, guideEnabled, tools }: ChatRequestBody = await request.json();
+  const { message, conversationSlug, readPageTool, guideEnabled, tools, customerSpecificTools }: ChatRequestBody =
+    await request.json();
 
   Sentry.setTag("conversation_slug", conversationSlug);
 
@@ -90,6 +93,11 @@ export const POST = withWidgetAuth(async ({ request }, { session, mailbox }) => 
       data: base64Data,
     };
   });
+
+  if (tools && Object.keys(tools).length > 0) {
+    const customerEmail = customerSpecificTools ? userEmail : null;
+    waitUntil(storeTools(customerEmail, tools));
+  }
 
   const userMessage = await createUserMessage(
     conversation.id,

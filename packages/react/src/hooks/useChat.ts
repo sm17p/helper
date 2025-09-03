@@ -11,6 +11,7 @@ export interface UseChatProps {
   tools?: Record<string, HelperTool>;
   enableRealtime?: boolean;
   ai?: Parameters<typeof useAIChat>[0];
+  customerSpecificTools?: boolean;
 }
 
 type UseChatResult = Omit<ReturnType<typeof useAIChat>, "messages"> & {
@@ -24,6 +25,7 @@ export const useChat = ({
   tools = {},
   enableRealtime = true,
   ai: aiOptions,
+  customerSpecificTools = false,
 }: UseChatProps): UseChatResult => {
   const { client } = useHelperClient();
   const [agentTyping, setAgentTyping] = useState(false);
@@ -34,6 +36,7 @@ export const useChat = ({
       client.chat.handler({
         conversation,
         tools,
+        customerSpecificTools,
         onEscalated: () => {
           queryClient.setQueryData(["conversation", conversation.slug], (old: ConversationDetails | undefined) =>
             old ? { ...old, isEscalated: true } : old,
@@ -50,7 +53,7 @@ export const useChat = ({
           );
         },
       }),
-    [client, conversation, tools],
+    [client, conversation, tools, customerSpecificTools],
   );
 
   const { messages, setMessages, ...rest } = useAIChat({
