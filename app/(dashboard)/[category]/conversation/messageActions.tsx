@@ -103,6 +103,7 @@ export const MessageActions = () => {
   );
 
   const { user } = useSession() ?? {};
+  const shouldAutoAssign = Boolean(!conversation?.assignedToId && user?.preferences?.autoAssignOnTicketAction);
 
   const triggerMailboxConfetti = () => {
     if (!user?.preferences?.confetti) return;
@@ -419,7 +420,7 @@ export const MessageActions = () => {
               <Button
                 size={isAboveMd ? "default" : "sm"}
                 variant="outlined"
-                onClick={() => handleSend({ assign: false, close: false })}
+                onClick={() => handleSend({ assign: shouldAutoAssign, close: false })}
                 disabled={sendDisabled}
               >
                 Reply
@@ -429,7 +430,7 @@ export const MessageActions = () => {
               </Button>
               <Button
                 size={isAboveMd ? "default" : "sm"}
-                onClick={() => handleSend({ assign: false })}
+                onClick={() => handleSend({ assign: shouldAutoAssign })}
                 disabled={sendDisabled}
               >
                 {sending ? "Replying..." : "Reply and close"}
@@ -496,8 +497,8 @@ export const MessageActions = () => {
             handleTypingEvent(conversation.slug);
           }
         }}
-        onModEnter={() => !sendDisabled && handleSend({ assign: false })}
-        onOptionEnter={() => !sendDisabled && handleSend({ assign: false, close: false })}
+        onModEnter={() => !sendDisabled && handleSend({ assign: shouldAutoAssign })}
+        onOptionEnter={() => !sendDisabled && handleSend({ assign: shouldAutoAssign, close: false })}
         onSlashKey={() => {
           setShowCommandBar(true);
           setTimeout(() => commandInputRef.current?.focus(), 100);

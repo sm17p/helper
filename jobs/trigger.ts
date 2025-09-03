@@ -49,6 +49,7 @@ const events = {
       assignedToId: z.string().optional(),
       assignedToAI: z.boolean().optional(),
       message: z.string().optional(),
+      shouldAutoAssign: z.boolean().optional(),
     }),
     jobs: ["bulkUpdateConversations"],
   },

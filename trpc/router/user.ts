@@ -188,6 +188,7 @@ export const userRouter = {
       z.object({
         preferences: z
           .object({
+            autoAssignOnTicketAction: z.boolean().optional(),
             confetti: z.boolean().optional(),
             disableNextTicketPreview: z.boolean().optional(),
           })

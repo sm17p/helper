@@ -147,6 +147,7 @@ export const conversationsRouter = {
         assignedToId: z.string().nullable().optional(),
         message: z.string().nullable().optional(),
         assignedToAI: z.boolean().optional(),
+        shouldAutoAssign: z.boolean().optional(),
       }),
     )
     .mutation(async ({ ctx, input }) => {
@@ -165,6 +166,7 @@ export const conversationsRouter = {
         },
         byUserId: ctx.user.id,
         message: input.message ?? null,
+        shouldAutoAssign: input.shouldAutoAssign,
       });
     }),
   bulkUpdate: mailboxProcedure
@@ -175,10 +177,11 @@ export const conversationsRouter = {
         assignedToId: z.string().optional(),
         assignedToAI: z.boolean().optional(),
         message: z.string().optional(),
+        shouldAutoAssign: z.boolean().optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
-      const { conversationFilter, status, assignedToId, message, assignedToAI } = input;
+      const { conversationFilter, status, assignedToId, message, assignedToAI, shouldAutoAssign } = input;
 
       if (Array.isArray(conversationFilter) && conversationFilter.length <= 25) {
         for (const conversationId of conversationFilter) {
@@ -186,6 +189,7 @@ export const conversationsRouter = {
             set: { status, assignedToId, assignedToAI },
             byUserId: ctx.user.id,
             message,
+            shouldAutoAssign,
           });
         }
         return { updatedImmediately: true };
@@ -198,6 +202,7 @@ export const conversationsRouter = {
         assignedToId: input.assignedToId,
         assignedToAI: input.assignedToAI,
         message: input.message,
+        shouldAutoAssign,
       });
       return { updatedImmediately: false };
     }),

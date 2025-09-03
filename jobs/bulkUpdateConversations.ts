@@ -15,6 +15,7 @@ export const bulkUpdateConversations = async ({
   assignedToId,
   assignedToAI,
   message,
+  shouldAutoAssign,
 }: {
   conversationFilter: number[] | z.infer<typeof searchSchema>;
   status?: "open" | "closed" | "spam";
@@ -22,6 +23,7 @@ export const bulkUpdateConversations = async ({
   assignedToId?: string;
   assignedToAI?: boolean;
   message?: string;
+  shouldAutoAssign?: boolean;
 }) => {
   const mailbox = assertDefinedOrRaiseNonRetriableError(await getMailbox());
 
@@ -45,6 +47,7 @@ export const bulkUpdateConversations = async ({
       set: { status, assignedToId, assignedToAI },
       byUserId: userId,
       message,
+      shouldAutoAssign,
     });
   }
 

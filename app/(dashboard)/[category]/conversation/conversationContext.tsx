@@ -121,7 +121,7 @@ export const ConversationContextProvider = ({ children }: { children: React.Reac
     async (status: "closed" | "spam" | "open") => {
       const previousStatus = data?.status;
 
-      await update({ status });
+      await update({ status, shouldAutoAssign: true });
 
       if (status === "open") {
         toast.success("Conversation reopened");

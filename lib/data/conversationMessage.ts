@@ -357,7 +357,7 @@ export const createReply = async (
     if (shouldAutoAssign && user && !conversation.assignedToId) {
       await updateConversation(
         conversationId,
-        { set: { assignedToId: user.id, assignedToAI: false }, byUserId: null },
+        { set: { assignedToId: user.id, assignedToAI: false }, byUserId: user.id, shouldAutoAssign },
         tx,
       );
     }

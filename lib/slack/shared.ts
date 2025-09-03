@@ -106,7 +106,12 @@ export const handleMessageSlackAction = async (message: SlackMessage, payload: a
       await db.transaction(async (tx) => {
         await updateConversation(
           conversation.id,
-          { set: { status: "closed" }, byUserId: user?.id ?? null, message: "Resolved via Slack" },
+          {
+            set: { status: "closed" },
+            byUserId: user?.id ?? null,
+            message: "Resolved via Slack",
+            shouldAutoAssign: true,
+          },
           tx,
         );
       });

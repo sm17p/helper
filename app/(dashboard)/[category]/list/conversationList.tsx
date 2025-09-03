@@ -102,6 +102,7 @@ export const List = () => {
         {
           conversationFilter,
           status,
+          shouldAutoAssign: true,
         },
         {
           onSuccess: ({ updatedImmediately }) => {

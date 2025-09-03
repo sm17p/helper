@@ -5,7 +5,14 @@ import { cache } from "react";
 import { takeUniqueOrThrow } from "@/components/utils/arrays";
 import { assertDefined } from "@/components/utils/assert";
 import { db, Transaction } from "@/db/client";
-import { conversationMessages, conversations, gmailSupportEmails, mailboxes, platformCustomers } from "@/db/schema";
+import {
+  conversationMessages,
+  conversations,
+  gmailSupportEmails,
+  mailboxes,
+  platformCustomers,
+  userProfiles,
+} from "@/db/schema";
 import { conversationEvents } from "@/db/schema/conversationEvents";
 import { triggerEvent } from "@/jobs/trigger";
 import { runAIQuery } from "@/lib/ai";
@@ -83,16 +90,31 @@ export const updateConversation = async (
     message = null,
     type = "update",
     skipRealtimeEvents = false,
+    shouldAutoAssign = false,
   }: {
     set?: Partial<typeof conversations.$inferInsert>;
     byUserId?: string | null;
     message?: string | null;
     type?: (typeof conversationEvents.$inferSelect)["type"];
     skipRealtimeEvents?: boolean;
+    shouldAutoAssign?: boolean;
   },
   tx: Transaction | typeof db = db,
 ) => {
   const current = assertDefined(await tx.query.conversations.findFirst({ where: eq(conversations.id, id) }));
+
+  if (shouldAutoAssign && !dbUpdates.assignedToAI && !dbUpdates.assignedToId && !current.assignedToId && byUserId) {
+    const userPreferences = await tx.query.userProfiles.findFirst({
+      where: eq(userProfiles.id, byUserId),
+      columns: { preferences: true },
+    });
+
+    if (userPreferences?.preferences?.autoAssignOnTicketAction) {
+      dbUpdates.assignedToId = byUserId;
+      dbUpdates.assignedToAI = false;
+    }
+  }
+
   if (dbUpdates.assignedToAI) {
     dbUpdates.status = "closed";
     dbUpdates.assignedToId = null;
