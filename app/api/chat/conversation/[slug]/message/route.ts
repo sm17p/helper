@@ -21,6 +21,7 @@ export const POST = withWidgetAuth<{ slug: string }>(async ({ request, context: 
     attachments = [],
     tools,
     customerSpecificTools,
+    customerInfoUrl,
   } = createMessageBodySchema.parse(await request.json());
 
   if (!content || content.trim().length === 0) {
@@ -79,7 +80,11 @@ export const POST = withWidgetAuth<{ slug: string }>(async ({ request, context: 
 
   const userMessage = await createUserMessage(conversation.id, userEmail, content, attachmentData);
 
-  await triggerEvent("conversations/auto-response.create", { messageId: userMessage.id, tools });
+  await triggerEvent("conversations/auto-response.create", {
+    messageId: userMessage.id,
+    tools,
+    customerInfoUrl,
+  });
 
   return corsResponse({
     messageId: userMessage.id,

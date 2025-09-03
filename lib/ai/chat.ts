@@ -39,8 +39,9 @@ import {
 } from "@/lib/data/conversationMessage";
 import { createAndUploadFile, downloadFile, getFileUrl } from "@/lib/data/files";
 import { type Mailbox } from "@/lib/data/mailbox";
-import { getPlatformCustomer, PlatformCustomer } from "@/lib/data/platformCustomer";
+import { getPlatformCustomer, PlatformCustomer, upsertPlatformCustomer } from "@/lib/data/platformCustomer";
 import { fetchPromptRetrievalData } from "@/lib/data/retrieval";
+import { CustomerInfo, getMetadata } from "@/lib/metadataApiClient";
 import { trackAIUsageEvent } from "../data/aiUsageEvents";
 import { captureExceptionAndLog, captureExceptionAndThrowIfDevelopment } from "../shared/sentry";
 
@@ -142,17 +143,35 @@ export const loadPreviousMessages = async (conversationId: number, latestMessage
     });
 };
 
+const fetchCustomerInfo = async (customerInfoUrl: string, mailbox: Mailbox) => {
+  try {
+    const metadata = await getMetadata(
+      { url: customerInfoUrl, hmacSecret: mailbox.widgetHMACSecret },
+      { timestamp: Math.floor(Date.now() / 1000) },
+    );
+    return metadata?.customer ?? null;
+  } catch (error) {
+    captureExceptionAndLog(error);
+    return null;
+  }
+};
+
 const buildPromptMessages = async (
   mailbox: Mailbox,
   email: string | null,
   query: string,
   guideEnabled = false,
+  customerInfoUrl?: string | null,
 ): Promise<{
   messages: CoreMessage[];
   sources: { url: string; pageTitle: string; markdown: string; similarity: number }[];
   promptInfo: Omit<PromptInfo, "availableTools">;
+  customerInfo: CustomerInfo | null;
 }> => {
-  const { knowledgeBank, websitePagesPrompt, websitePages } = await fetchPromptRetrievalData(query, null);
+  const [{ knowledgeBank, websitePagesPrompt, websitePages }, customerInfo] = await Promise.all([
+    fetchPromptRetrievalData(query, null),
+    customerInfoUrl ? fetchCustomerInfo(customerInfoUrl, mailbox) : null,
+  ]);
 
   const systemPrompt = [
     CHAT_SYSTEM_PROMPT.replaceAll("MAILBOX_NAME", mailbox.name).replaceAll(
@@ -171,7 +190,17 @@ const buildPromptMessages = async (
   if (websitePagesPrompt) {
     prompt += `\n${websitePagesPrompt}`;
   }
-  const userPrompt = email ? `\nCurrent user email: ${email}` : "Anonymous user";
+  let userPrompt;
+  if (customerInfo) {
+    userPrompt = "Current user details:\n";
+    if (email) userPrompt += `- Email: ${email}\n`;
+    if (customerInfo.name) userPrompt += `- Name: ${customerInfo.name}\n`;
+    for (const [key, value] of Object.entries(customerInfo.metadata ?? {})) {
+      userPrompt += `- ${key}: ${typeof value === "string" ? value : JSON.stringify(value)}\n`;
+    }
+  } else {
+    userPrompt = email ? `\nCurrent user email: ${email}` : "Anonymous user";
+  }
   prompt += userPrompt;
 
   return {
@@ -188,6 +217,7 @@ const buildPromptMessages = async (
       websitePages: websitePages.map((page) => ({ url: page.url, title: page.pageTitle, similarity: page.similarity })),
       userPrompt,
     },
+    customerInfo,
   };
 };
 
@@ -326,6 +356,7 @@ export const generateAIResponse = async ({
   evaluation = false,
   guideEnabled = false,
   tools: clientProvidedTools,
+  customerInfoUrl,
 }: {
   messages: Message[];
   mailbox: Mailbox;
@@ -349,6 +380,7 @@ export const generateAIResponse = async ({
   evaluation?: boolean;
   dataStream?: DataStreamWriter;
   tools?: Record<string, ToolRequestBody>;
+  customerInfoUrl?: string | null;
 }) => {
   const lastMessage = messages.findLast((m: Message) => m.role === "user");
   const query = lastMessage?.content || "";
@@ -358,9 +390,23 @@ export const generateAIResponse = async ({
     messages: systemMessages,
     sources,
     promptInfo,
-  } = await buildPromptMessages(mailbox, email, query, guideEnabled);
+    customerInfo,
+  } = await buildPromptMessages(mailbox, email, query, guideEnabled, customerInfoUrl);
 
-  const tools = await buildTools(conversationId, email, true, guideEnabled);
+  if (email && customerInfo?.metadata) {
+    await upsertPlatformCustomer({
+      email,
+      customerMetadata: customerInfo.metadata,
+    });
+  }
+
+  const tools = await buildTools({
+    conversationId,
+    email,
+    customerMetadataProvided: !!customerInfoUrl,
+    includeHumanSupport: true,
+    guideEnabled,
+  });
   if (readPageTool) {
     tools[readPageTool.toolName] = {
       description: readPageTool.toolDescription,
@@ -579,6 +625,7 @@ export const respondWithAI = async ({
   isHelperUser = false,
   reasoningEnabled = true,
   tools,
+  customerInfoUrl,
 }: {
   conversation: Conversation;
   mailbox: Mailbox;
@@ -598,6 +645,7 @@ export const respondWithAI = async ({
   isHelperUser?: boolean;
   reasoningEnabled?: boolean;
   tools?: Record<string, ToolRequestBody>;
+  customerInfoUrl?: string | null;
 }) => {
   if (conversation.status === "spam") return createTextResponse("", Date.now().toString());
 
@@ -683,6 +731,7 @@ export const respondWithAI = async ({
         guideEnabled,
         addReasoning: reasoningEnabled,
         tools,
+        customerInfoUrl,
         dataStream,
         async onFinish({ text, finishReason, steps, traceId, experimental_providerMetadata, sources, promptInfo }) {
           const hasSensitiveToolCall = steps.some((step: any) =>

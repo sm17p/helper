@@ -42,6 +42,7 @@ export const createMessageBodySchema = z.object({
     .optional(),
   tools: z.record(z.string(), toolBodySchema).optional(),
   customerSpecificTools: z.boolean().optional(),
+  customerInfoUrl: z.string().nullish(),
 });
 export type CreateMessageRequestBody = z.infer<typeof createMessageBodySchema>;
 export type CreateMessageParams = Omit<CreateMessageRequestBody, "attachments" | "tools"> & {
