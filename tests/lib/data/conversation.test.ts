@@ -21,6 +21,7 @@ import {
 import { searchEmailsByKeywords } from "@/lib/emailSearchService/searchEmailsByKeywords";
 import { conversationChannelId, conversationsListChannelId } from "@/lib/realtime/channels";
 import { publishToRealtime } from "@/lib/realtime/publish";
+import { updateUserPreferences } from "@/tests/support/helpers/userProfile";
 
 vi.mock("@/components/constants", () => ({
   getBaseUrl: () => "https://example.com",
@@ -160,6 +161,220 @@ describe("updateConversation", () => {
     await updateConversation(conversation.id, { set: { subject: "Updated Subject" } });
 
     expect(jobsMock.triggerEvent).not.toHaveBeenCalled();
+  });
+
+  it("sets status to spam without setting closedAt", async () => {
+    const { conversation } = await conversationFactory.create({ status: "open" });
+
+    const result = await updateConversation(conversation.id, { set: { status: "spam" } });
+
+    expect(result).not.toBeNull();
+    expect(result?.status).toBe("spam");
+    expect(result?.closedAt).toBeNull();
+  });
+
+  it("does not send embedding event when status changes to spam", async () => {
+    const { conversation } = await conversationFactory.create({ status: "open" });
+
+    await updateConversation(conversation.id, { set: { status: "spam" } });
+
+    expect(jobsMock.triggerEvent).not.toHaveBeenCalled();
+  });
+
+  it("automatically closes conversation when assigned to AI", async () => {
+    const { conversation } = await conversationFactory.create({
+      status: "open",
+      assignedToId: null,
+      assignedToAI: false,
+    });
+
+    const result = await updateConversation(conversation.id, {
+      set: { assignedToAI: true },
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.assignedToAI).toBe(true);
+    expect(result?.assignedToId).toBeNull();
+    expect(result?.status).toBe("closed");
+    expect(result?.closedAt).toBeInstanceOf(Date);
+  });
+
+  it("clears human assignment when assigned to AI", async () => {
+    const { user } = await userFactory.createRootUser();
+    const { conversation } = await conversationFactory.create({
+      status: "open",
+      assignedToId: user.id,
+      assignedToAI: false,
+    });
+
+    const result = await updateConversation(conversation.id, {
+      set: { assignedToAI: true },
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.assignedToAI).toBe(true);
+    expect(result?.assignedToId).toBeNull();
+    expect(result?.status).toBe("closed");
+  });
+
+  it("sets assignedToAI to false when assigning to human", async () => {
+    const { user } = await userFactory.createRootUser();
+    const { conversation } = await conversationFactory.create({
+      status: "open",
+      assignedToId: null,
+      assignedToAI: true,
+    });
+
+    const result = await updateConversation(conversation.id, {
+      set: { assignedToId: user.id },
+    });
+
+    expect(result).not.toBeNull();
+    expect(result?.assignedToId).toBe(user.id);
+    expect(result?.assignedToAI).toBe(false);
+  });
+
+  describe("auto-assignment based on user preferences", () => {
+    const getConversationAssignmentFromDb = async (conversationId: number): Promise<string | null> => {
+      const conversation = await getConversationById(conversationId);
+      return conversation?.assignedToId || null;
+    };
+
+    describe("when auto-assign is enabled", () => {
+      it("assigns user on status update", async () => {
+        const { user } = await userFactory.createRootUser();
+        const { conversation } = await conversationFactory.create({ assignedToId: null });
+
+        const initialAssignment = await getConversationAssignmentFromDb(conversation.id);
+        expect(initialAssignment).toBeNull();
+
+        const result = await updateConversation(conversation.id, {
+          set: { status: "closed" },
+          byUserId: user.id,
+          shouldAutoAssign: true,
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.assignedToAI).toBe(false);
+        expect(result?.assignedToId).toBe(user.id);
+      });
+
+      it("does not assign user when conversation is already assigned", async () => {
+        const { user } = await userFactory.createRootUser();
+        const { user: otherUser } = await userFactory.createRootUser();
+        const { conversation } = await conversationFactory.create({ assignedToId: otherUser.id });
+
+        await updateUserPreferences(user.id, { autoAssignOnTicketAction: true });
+
+        const initialAssignment = await getConversationAssignmentFromDb(conversation.id);
+        expect(initialAssignment).toBe(otherUser.id);
+
+        const result = await updateConversation(conversation.id, {
+          set: { status: "closed" },
+          byUserId: user.id,
+          shouldAutoAssign: true,
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.assignedToAI).toBe(false);
+        expect(result?.assignedToId).toBe(otherUser.id);
+      });
+    });
+
+    describe("when auto-assign is disabled", () => {
+      it("does not assign user when updating conversation status", async () => {
+        const { user } = await userFactory.createRootUser();
+        const { conversation } = await conversationFactory.create({ assignedToId: null });
+
+        await updateUserPreferences(user.id, { autoAssignOnTicketAction: false });
+
+        const initialAssignment = await getConversationAssignmentFromDb(conversation.id);
+        expect(initialAssignment).toBeNull();
+
+        const result = await updateConversation(conversation.id, {
+          set: { status: "closed" },
+          byUserId: user.id,
+          shouldAutoAssign: true,
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.assignedToAI).toBe(false);
+        expect(result?.assignedToId).toBeNull();
+      });
+    });
+
+    describe("auto-assign constraints", () => {
+      it("does not auto-assign when shouldAutoAssign is false", async () => {
+        const { user } = await userFactory.createRootUser();
+        const { conversation } = await conversationFactory.create({ assignedToId: null });
+
+        await updateUserPreferences(user.id, { autoAssignOnTicketAction: true });
+
+        const result = await updateConversation(conversation.id, {
+          set: { status: "closed" },
+          byUserId: user.id,
+          shouldAutoAssign: false,
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.assignedToAI).toBe(false);
+        expect(result?.assignedToId).toBeNull();
+      });
+
+      it("does not auto-assign when byUserId is not provided", async () => {
+        const { conversation } = await conversationFactory.create({ assignedToId: null });
+
+        const result = await updateConversation(conversation.id, {
+          set: { status: "closed" },
+          shouldAutoAssign: true,
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.assignedToAI).toBe(false);
+        expect(result?.assignedToId).toBeNull();
+      });
+
+      it("does not auto-assign when explicit assignedToId is provided", async () => {
+        const { user } = await userFactory.createRootUser();
+        const { user: otherUser } = await userFactory.createRootUser();
+        const { conversation } = await conversationFactory.create({ assignedToId: null });
+
+        await updateUserPreferences(user.id, { autoAssignOnTicketAction: true });
+
+        const result = await updateConversation(conversation.id, {
+          set: {
+            status: "closed",
+            assignedToId: otherUser.id,
+          },
+          byUserId: user.id,
+          shouldAutoAssign: true,
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.assignedToAI).toBe(false);
+        expect(result?.assignedToId).toBe(otherUser.id);
+      });
+
+      it("does not auto-assign when assignedToAI is being set", async () => {
+        const { user } = await userFactory.createRootUser();
+        const { conversation } = await conversationFactory.create({ assignedToId: null });
+
+        await updateUserPreferences(user.id, { autoAssignOnTicketAction: true });
+
+        const result = await updateConversation(conversation.id, {
+          set: {
+            status: "closed",
+            assignedToAI: true,
+          },
+          byUserId: user.id,
+          shouldAutoAssign: true,
+        });
+
+        expect(result).not.toBeNull();
+        expect(result?.assignedToId).toBeNull();
+        expect(result?.assignedToAI).toBe(true);
+      });
+    });
   });
 });
 

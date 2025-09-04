@@ -23,6 +23,7 @@ import {
 } from "@/lib/data/conversationMessage";
 import { getFileUrl } from "@/lib/data/files";
 import { getSlackPermalink } from "@/lib/slack/client";
+import { updateUserPreferences } from "@/tests/support/helpers/userProfile";
 
 vi.mock("@/lib/slack/client", () => ({
   getSlackPermalink: vi.fn().mockResolvedValue(null),
@@ -576,6 +577,46 @@ describe("createReply", () => {
 
     const updatedConversation = await getConversationById(conversation.id);
     expect(updatedConversation?.assignedToId).toBeNull();
+  });
+
+  it("auto-assigns when user has preference enabled", async () => {
+    const { profile } = await userFactory.createRootUser();
+    const { conversation } = await conversationFactory.create({ assignedToId: null });
+
+    await createReply({
+      conversationId: conversation.id,
+      message: "Test message",
+      user: profile,
+      shouldAutoAssign: true,
+    });
+
+    const updatedConversation = await getConversationById(conversation.id);
+    expect(updatedConversation?.assignedToId).toBe(profile.id);
+  });
+
+  it("does not auto-assign regardless of user auto-assignment setting", async () => {
+    const { profile } = await userFactory.createRootUser();
+    const { conversation: c1 } = await conversationFactory.create({ assignedToId: null });
+    const { conversation: c2 } = await conversationFactory.create({ assignedToId: null });
+
+    await createReply({
+      conversationId: c1.id,
+      message: "Test message",
+      user: profile,
+      shouldAutoAssign: false,
+    });
+
+    await updateUserPreferences(profile.id, { autoAssignOnTicketAction: false });
+
+    await createReply({
+      conversationId: c2.id,
+      message: "Test message",
+      user: profile,
+      shouldAutoAssign: false,
+    });
+
+    expect((await getConversationById(c1.id))?.assignedToId).toBeNull();
+    expect((await getConversationById(c2.id))?.assignedToId).toBeNull();
   });
 
   it("handles file uploads", async () => {

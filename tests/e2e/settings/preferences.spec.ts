@@ -52,4 +52,16 @@ test.describe("Settings - User preferences", () => {
     await waitForSettingsSaved(page);
     await expect(nextTicketPreviewSwitch).not.toBeChecked();
   });
+
+  test("should allow toggling on/off the auto assign on ticket action", async ({ page }) => {
+    const autoAssignOnTicketActionSetting = page.locator('h2:text("Auto-Assign On Ticket Action")');
+    const autoAssignOnTicketActionSwitch = page.locator('[aria-label="Auto-Assign On Ticket Action Switch"]');
+
+    await expect(autoAssignOnTicketActionSetting).toBeVisible();
+    await expect(autoAssignOnTicketActionSwitch).toBeChecked();
+
+    await autoAssignOnTicketActionSwitch.click();
+    await waitForSettingsSaved(page);
+    await expect(autoAssignOnTicketActionSwitch).not.toBeChecked();
+  });
 });

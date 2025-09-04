@@ -1,12 +1,14 @@
 import { conversationFactory } from "@tests/support/factories/conversations";
 import { userFactory } from "@tests/support/factories/users";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { db } from "@/db/client";
 import { getConversationById } from "@/lib/data/conversation";
 import { createReply } from "@/lib/data/conversationMessage";
 import { addNote } from "@/lib/data/note";
 import { findUserViaSlack } from "@/lib/data/user";
 import { openSlackModal, postSlackMessage } from "@/lib/slack/client";
 import { handleMessageSlackAction } from "@/lib/slack/shared";
+import { updateUserPreferences } from "@/tests/support/helpers/userProfile";
 
 vi.mock("@/lib/data/user", async (importOriginal) => ({
   ...(await importOriginal()),
@@ -18,10 +20,14 @@ vi.mock("@/lib/slack/client", () => ({
   postSlackMessage: vi.fn(),
 }));
 
-vi.mock("@/lib/data/conversationMessage", () => ({
-  createReply: vi.fn(),
-  getLastAiGeneratedDraft: vi.fn(),
-}));
+vi.mock("@/lib/data/conversationMessage", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/data/conversationMessage")>();
+  return {
+    ...actual,
+    createReply: vi.fn().mockImplementation(actual.createReply),
+    getLastAiGeneratedDraft: vi.fn(),
+  };
+});
 
 vi.mock("@/lib/data/note", () => ({
   addNote: vi.fn(),
@@ -66,14 +72,14 @@ describe("handleSlackAction", () => {
     );
   });
 
-  it("closes the conversation when the action is close", async () => {
-    const { profile } = await userFactory.createRootUser({
+  it("closes the conversation and auto-assigns when the action is close", async () => {
+    const { user, profile } = await userFactory.createRootUser({
       userOverrides: {
         email: "user@example.com",
       },
       mailboxOverrides: { slackBotToken: "xoxb-12345678901234567890" },
     });
-    const { conversation } = await conversationFactory.create();
+    const { conversation } = await conversationFactory.create({ assignedToId: null });
 
     const message = {
       conversationId: conversation.id,
@@ -91,7 +97,78 @@ describe("handleSlackAction", () => {
     await handleMessageSlackAction(message, payload);
 
     const updatedConversation = await getConversationById(conversation.id);
-    expect(updatedConversation?.status).toBe("closed");
+    expect(updatedConversation).toMatchObject({
+      status: "closed",
+      assignedToId: user.id,
+      assignedToAI: false,
+    });
+  });
+
+  it("closes the conversation and does not auto-assign when user preference is disabled", async () => {
+    const { profile } = await userFactory.createRootUser({
+      userOverrides: {
+        email: "user@example.com",
+      },
+      mailboxOverrides: { slackBotToken: "xoxb-12345678901234567890" },
+    });
+    const { conversation } = await conversationFactory.create({ assignedToId: null });
+
+    await updateUserPreferences(profile.id, { autoAssignOnTicketAction: false });
+
+    const message = {
+      conversationId: conversation.id,
+      slackChannel: "C12345",
+      slackMessageTs: "1234567890.123456",
+    };
+
+    const payload = {
+      actions: [{ action_id: "close" }],
+      user: { id: "U12345" },
+    };
+
+    vi.mocked(findUserViaSlack).mockResolvedValueOnce(profile);
+
+    await handleMessageSlackAction(message, payload);
+
+    const updatedConversation = await getConversationById(conversation.id);
+    expect(updatedConversation).toMatchObject({
+      status: "closed",
+      assignedToId: null,
+      assignedToAI: false,
+    });
+  });
+
+  it("closes the conversation but does not change assignment when already assigned", async () => {
+    const { profile } = await userFactory.createRootUser({
+      userOverrides: {
+        email: "user@example.com",
+      },
+      mailboxOverrides: { slackBotToken: "xoxb-12345678901234567890" },
+    });
+    const { user: otherUser } = await userFactory.createRootUser();
+    const { conversation } = await conversationFactory.create({ assignedToId: otherUser.id });
+
+    const message = {
+      conversationId: conversation.id,
+      slackChannel: "C12345",
+      slackMessageTs: "1234567890.123456",
+    };
+
+    const payload = {
+      actions: [{ action_id: "close" }],
+      user: { id: "U12345" },
+    };
+
+    vi.mocked(findUserViaSlack).mockResolvedValueOnce(profile);
+
+    await handleMessageSlackAction(message, payload);
+
+    const updatedConversation = await getConversationById(conversation.id);
+    expect(updatedConversation).toMatchObject({
+      status: "closed",
+      assignedToId: otherUser.id,
+      assignedToAI: false,
+    });
   });
 
   it("posts an ephemeral message when the Helper user is not found", async () => {
@@ -125,14 +202,14 @@ describe("handleSlackAction", () => {
     );
   });
 
-  it("creates a reply when the sending method is email", async () => {
+  it("creates a reply and keeps conversation open when the sending method is email", async () => {
     const { profile } = await userFactory.createRootUser({
       userOverrides: {
         email: "user@example.com",
       },
       mailboxOverrides: { slackBotToken: "xoxb-12345678901234567890" },
     });
-    const { conversation } = await conversationFactory.create();
+    const { conversation } = await conversationFactory.create({ assignedToId: null });
 
     const message = {
       conversationId: conversation.id,
@@ -164,16 +241,23 @@ describe("handleSlackAction", () => {
       close: false,
       slack: { channel: "C12345", messageTs: "1234567890.123456" },
     });
+
+    const updatedConversation = await getConversationById(conversation.id);
+    expect(updatedConversation).toMatchObject({
+      status: "open",
+      assignedToId: profile.id,
+      assignedToAI: false,
+    });
   });
 
   it("creates a reply and closes the conversation when the sending method is email_and_close", async () => {
-    const { profile } = await userFactory.createRootUser({
+    const { user, profile } = await userFactory.createRootUser({
       userOverrides: {
         email: "user@example.com",
       },
       mailboxOverrides: { slackBotToken: "xoxb-12345678901234567890" },
     });
-    const { conversation } = await conversationFactory.create();
+    const { conversation } = await conversationFactory.create({ assignedToId: null });
 
     const message = {
       conversationId: conversation.id,
@@ -204,6 +288,13 @@ describe("handleSlackAction", () => {
       user: profile,
       close: true,
       slack: { channel: "C12345", messageTs: "1234567890.123456" },
+    });
+
+    const updatedConversation = await getConversationById(conversation.id);
+    expect(updatedConversation).toMatchObject({
+      status: "closed",
+      assignedToId: user.id,
+      assignedToAI: false,
     });
   });
 
@@ -246,5 +337,61 @@ describe("handleSlackAction", () => {
       slackChannel: "C12345",
       slackMessageTs: "1234567890.123456",
     });
+
+    const updatedConversation = await getConversationById(conversation.id);
+    expect(updatedConversation).toMatchObject({
+      status: "open",
+      assignedToId: null,
+      assignedToAI: false,
+    });
+  });
+
+  it("assigns conversation to specific user when using assign modal", async () => {
+    const { profile } = await userFactory.createRootUser({
+      userOverrides: {
+        email: "user@example.com",
+      },
+      mailboxOverrides: { slackBotToken: "xoxb-12345678901234567890" },
+    });
+    const { user: assigneeUser } = await userFactory.createRootUser();
+    const { conversation } = await conversationFactory.create({ assignedToId: null });
+
+    const message = {
+      conversationId: conversation.id,
+      slackChannel: "C12345",
+      slackMessageTs: "1234567890.123456",
+    };
+
+    const payload = {
+      type: "view_submission",
+      user: { id: "U12345" },
+      view: {
+        callback_id: "assign_conversation",
+        state: {
+          values: {
+            assign_to: { user: { selected_option: { value: assigneeUser.id } } },
+            note: { message: { value: "Assignment note" } },
+          },
+        },
+      },
+    };
+
+    vi.mocked(findUserViaSlack).mockResolvedValueOnce(profile);
+
+    await handleMessageSlackAction(message, payload);
+
+    const updatedConversation = await getConversationById(conversation.id);
+    expect(updatedConversation).toMatchObject({
+      assignedToId: assigneeUser.id,
+      assignedToAI: false,
+    });
+
+    const events = await db.query.conversationEvents.findMany({
+      where: (conversationEvents, { eq }) => eq(conversationEvents.conversationId, conversation.id),
+    });
+
+    const assignmentEvent = events.find((e) => e.changes?.assignedToId === assigneeUser.id);
+    expect(assignmentEvent).toBeDefined();
+    expect(assignmentEvent!.reason).toBe("Assignment note");
   });
 });

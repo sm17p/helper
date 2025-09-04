@@ -7,9 +7,10 @@ import { platformCustomerFactory } from "@tests/support/factories/platformCustom
 import { userFactory } from "@tests/support/factories/users";
 import { mockTriggerEvent } from "@tests/support/jobsUtils";
 import { createTestTRPCContext } from "@tests/support/trpcUtils";
+import { eq } from "drizzle-orm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { db } from "@/db/client";
-import { conversationFollowers, conversations, mailboxes } from "@/db/schema";
+import { conversationFollowers, conversations, mailboxes, userProfiles } from "@/db/schema";
 import type { authUsers } from "@/db/supabaseSchema/auth";
 import { createCaller } from "@/trpc";
 
@@ -156,7 +157,8 @@ describe("conversationsRouter", () => {
     });
 
     it("updates status without setting closedAt or calling triggerEvent when not closed", async () => {
-      const { conversation } = await conversationFactory.create();
+      const { user } = await userFactory.createUser();
+      const { conversation } = await conversationFactory.create({ assignedToId: user.id });
 
       const caller = createCaller(await createTestTRPCContext(user));
       await caller.mailbox.conversations.update({
@@ -176,6 +178,102 @@ describe("conversationsRouter", () => {
       expect(updatedConversation!.closedAt).toBeNull();
 
       expect(mockTriggerEvent).not.toHaveBeenCalled();
+    });
+
+    it("auto-assigns conversation to user when updating unassigned conversation", async () => {
+      const { conversation } = await conversationFactory.create({ assignedToId: null });
+
+      const caller = createCaller(await createTestTRPCContext(user));
+      await caller.mailbox.conversations.update({
+        conversationSlug: conversation.slug,
+        status: "closed",
+        shouldAutoAssign: true,
+      });
+
+      const updatedConversation = await db.query.conversations.findFirst({
+        where: (conversations, { eq }) => eq(conversations.id, conversation.id),
+      });
+
+      expect(updatedConversation).toMatchObject({
+        id: conversation.id,
+        assignedToId: user.id,
+        assignedToAI: false,
+        status: "closed",
+      });
+    });
+
+    it("does not auto-assign when user preference is disabled", async () => {
+      const { conversation } = await conversationFactory.create({ assignedToId: null });
+
+      await db
+        .update(userProfiles)
+        .set({
+          preferences: { autoAssignOnTicketAction: false },
+        })
+        .where(eq(userProfiles.id, user.id));
+
+      const caller = createCaller(await createTestTRPCContext(user));
+      await caller.mailbox.conversations.update({
+        conversationSlug: conversation.slug,
+        status: "closed",
+        shouldAutoAssign: true,
+      });
+
+      const updatedConversation = await db.query.conversations.findFirst({
+        where: (conversations, { eq }) => eq(conversations.id, conversation.id),
+      });
+
+      expect(updatedConversation).toMatchObject({
+        id: conversation.id,
+        assignedToId: null,
+        status: "closed",
+      });
+    });
+
+    it("does not change assignment when conversation is already assigned", async () => {
+      const { user: otherUser } = await userFactory.createRootUser();
+      const { conversation } = await conversationFactory.create({ assignedToId: otherUser.id });
+
+      const caller = createCaller(await createTestTRPCContext(user));
+      await caller.mailbox.conversations.update({
+        conversationSlug: conversation.slug,
+        status: "closed",
+        shouldAutoAssign: true,
+      });
+
+      const updatedConversation = await db.query.conversations.findFirst({
+        where: (conversations, { eq }) => eq(conversations.id, conversation.id),
+      });
+
+      expect(updatedConversation).toMatchObject({
+        id: conversation.id,
+        assignedToId: otherUser.id, // Should remain assigned to other user
+        status: "closed",
+      });
+    });
+
+    it("handles explicit assignment with status update", async () => {
+      const { conversation } = await conversationFactory.create({ assignedToId: null });
+      const { user: assigneeUser } = await userFactory.createRootUser();
+
+      const caller = createCaller(await createTestTRPCContext(user));
+      await caller.mailbox.conversations.update({
+        conversationSlug: conversation.slug,
+        assignedToId: assigneeUser.id,
+        status: "closed",
+        shouldAutoAssign: true,
+      });
+
+      const updatedConversation = await db.query.conversations.findFirst({
+        where: (conversations, { eq }) => eq(conversations.id, conversation.id),
+      });
+
+      expect(updatedConversation).toMatchObject({
+        id: conversation.id,
+        assignedToId: assigneeUser.id,
+        assignedToAI: false,
+        status: "closed",
+      });
     });
   });
 
@@ -215,6 +313,207 @@ describe("conversationsRouter", () => {
       expect(updatedFile).toMatchObject({
         id: file.id,
         messageId: null,
+      });
+    });
+  });
+
+  describe("bulkUpdate", () => {
+    it("updates conversations immediately for ≤25 conversations", async () => {
+      const { conversation: firstConversation } = await conversationFactory.create({
+        status: "open",
+        assignedToId: null,
+      });
+      const { conversation: secondConversation } = await conversationFactory.create({
+        status: "open",
+        assignedToId: null,
+      });
+
+      const caller = createCaller(await createTestTRPCContext(user));
+      const result = await caller.mailbox.conversations.bulkUpdate({
+        conversationFilter: [firstConversation.id, secondConversation.id],
+        status: "closed",
+        shouldAutoAssign: true,
+      });
+
+      expect(result).toMatchObject({
+        updatedImmediately: true,
+      });
+
+      const bulkUpdateCalls = vi
+        .mocked(mockTriggerEvent)
+        .mock.calls.filter(([eventName]) => eventName === "conversations/bulk-update");
+      expect(bulkUpdateCalls).toHaveLength(0);
+
+      const updatedFirstConversation = await db.query.conversations.findFirst({
+        where: eq(conversations.id, firstConversation.id),
+      });
+      const updatedSecondConversation = await db.query.conversations.findFirst({
+        where: eq(conversations.id, secondConversation.id),
+      });
+
+      expect(updatedFirstConversation).toMatchObject({
+        status: "closed",
+        assignedToId: user.id,
+        assignedToAI: false,
+      });
+      expect(updatedFirstConversation?.closedAt).toBeInstanceOf(Date);
+
+      expect(updatedSecondConversation).toMatchObject({
+        status: "closed",
+        assignedToId: user.id,
+        assignedToAI: false,
+      });
+      expect(updatedSecondConversation?.closedAt).toBeInstanceOf(Date);
+    });
+
+    it("triggers job for more than 25 conversations", async () => {
+      const manyConversationIds = Array.from({ length: 26 }, (_, i) => i + 1);
+
+      const caller = createCaller(await createTestTRPCContext(user));
+      const result = await caller.mailbox.conversations.bulkUpdate({
+        conversationFilter: manyConversationIds,
+        status: "spam",
+        shouldAutoAssign: false,
+      });
+
+      expect(result).toMatchObject({
+        updatedImmediately: false,
+      });
+
+      expect(mockTriggerEvent).toHaveBeenCalledWith("conversations/bulk-update", {
+        userId: user.id,
+        conversationFilter: manyConversationIds,
+        status: "spam",
+        assignedToId: undefined,
+        assignedToAI: undefined,
+        message: undefined,
+        shouldAutoAssign: false,
+      });
+    });
+
+    it("uses search schema for job queue", async () => {
+      const caller = createCaller(await createTestTRPCContext(user));
+
+      const searchFilter = {
+        status: ["open"],
+        cursor: null,
+        limit: 25,
+        sort: null,
+        search: null,
+        category: null,
+      };
+
+      const result = await caller.mailbox.conversations.bulkUpdate({
+        conversationFilter: searchFilter,
+        status: "open",
+        assignedToAI: true,
+      });
+
+      expect(result).toMatchObject({
+        updatedImmediately: false,
+      });
+
+      expect(mockTriggerEvent).toHaveBeenCalledWith("conversations/bulk-update", {
+        userId: user.id,
+        conversationFilter: searchFilter,
+        status: "open",
+        assignedToId: undefined,
+        assignedToAI: true,
+        message: undefined,
+        shouldAutoAssign: undefined,
+      });
+    });
+
+    it("handles all parameters correctly for immediate update", async () => {
+      const { user: assigneeUser } = await userFactory.createRootUser();
+      const { conversation: testConversation } = await conversationFactory.create({
+        status: "open",
+        assignedToId: null,
+      });
+
+      const caller = createCaller(await createTestTRPCContext(user));
+      await caller.mailbox.conversations.bulkUpdate({
+        conversationFilter: [testConversation.id],
+        status: "closed",
+        assignedToId: assigneeUser.id,
+        assignedToAI: false,
+        message: "Resolved by team",
+        shouldAutoAssign: true,
+      });
+
+      const updatedConversation = await db.query.conversations.findFirst({
+        where: eq(conversations.id, testConversation.id),
+      });
+
+      expect(updatedConversation).toMatchObject({
+        status: "closed",
+        assignedToId: assigneeUser.id,
+        assignedToAI: false,
+      });
+      expect(updatedConversation?.closedAt).toBeInstanceOf(Date);
+    });
+
+    it("handles undefined optional parameters", async () => {
+      const { conversation: testConversation } = await conversationFactory.create({
+        status: "open",
+      });
+
+      const caller = createCaller(await createTestTRPCContext(user));
+
+      const result = await caller.mailbox.conversations.bulkUpdate({
+        conversationFilter: [testConversation.id],
+        status: "open",
+      });
+
+      expect(result).toMatchObject({
+        updatedImmediately: true,
+      });
+
+      const unchangedConversation = await db.query.conversations.findFirst({
+        where: eq(conversations.id, testConversation.id),
+      });
+
+      expect(unchangedConversation).toMatchObject({
+        status: "open",
+      });
+    });
+
+    it("handles non-existent conversation IDs gracefully", async () => {
+      const caller = createCaller(await createTestTRPCContext(user));
+
+      await expect(
+        caller.mailbox.conversations.bulkUpdate({
+          conversationFilter: [99999, 99998],
+          status: "closed",
+        }),
+      ).rejects.toThrow();
+    });
+
+    it("returns correct response structure for immediate update", async () => {
+      const { conversation: testConversation } = await conversationFactory.create();
+
+      const caller = createCaller(await createTestTRPCContext(user));
+      const result = await caller.mailbox.conversations.bulkUpdate({
+        conversationFilter: [testConversation.id],
+        status: "closed",
+      });
+
+      expect(result).toEqual({
+        updatedImmediately: true,
+      });
+    });
+
+    it("returns correct response structure for job queue", async () => {
+      const manyConversationIds = Array.from({ length: 26 }, (_, i) => i + 1);
+
+      const caller = createCaller(await createTestTRPCContext(user));
+      const result = await caller.mailbox.conversations.bulkUpdate({
+        conversationFilter: manyConversationIds,
+        status: "closed",
+      });
+
+      expect(result).toEqual({
+        updatedImmediately: false,
       });
     });
   });
