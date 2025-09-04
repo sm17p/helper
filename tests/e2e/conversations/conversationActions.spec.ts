@@ -1,7 +1,10 @@
-import { expect, test } from "@playwright/test";
+import { expect, Page, test } from "@playwright/test";
 import { desc, eq } from "drizzle-orm";
 import { db } from "../../../db/client";
 import { conversationEvents, conversations } from "../../../db/schema";
+import { waitForSettingsSaved } from "../utils/settingsHelpers";
+
+test.use({ storageState: "tests/e2e/.auth/user.json" });
 
 async function getConversationStatusFromDb(conversationId: number): Promise<string> {
   const [event] = await db
@@ -15,8 +18,6 @@ async function getConversationStatusFromDb(conversationId: number): Promise<stri
   }
   return "unknown";
 }
-
-test.use({ storageState: "tests/e2e/.auth/user.json" });
 
 async function getOpenConversation() {
   const result = await db
@@ -42,6 +43,25 @@ async function openCommandBar(page: any) {
   await commandBar.waitFor({ state: "visible" });
 }
 
+async function sendReplyMessage(page: Page, message: string, { close }: { close?: boolean } = {}) {
+  await expect(page.getByTestId("message-item").first()).toBeVisible();
+  const composer = page.locator('[aria-label="Conversation editor"] .tiptap.ProseMirror');
+  await expect(composer).toBeVisible();
+  await composer.click({ force: true });
+  await composer.focus();
+  await composer.evaluate((el) => {
+    el.innerHTML = "";
+    el.textContent = "";
+  });
+  await composer.pressSequentially(message);
+
+  const replyButton = close
+    ? page.locator('button:has-text("Reply and close")')
+    : page.locator('button:has-text("Reply"):not(:has-text("close")):not(:has-text("Close"))');
+  await replyButton.click();
+  await page.waitForLoadState("networkidle");
+}
+
 test.describe("Conversation Actions", () => {
   test.describe.configure({ mode: "serial" });
 
@@ -54,25 +74,8 @@ test.describe("Conversation Actions", () => {
 
   test.describe("Message Composition", () => {
     test("should send a reply message", async ({ page }) => {
-      const testMessage = "This is a test reply message";
-
-      const composer = page.locator('[aria-label="Conversation editor"] .tiptap.ProseMirror');
-      await expect(composer).toBeVisible();
-      await composer.click({ force: true });
-      await composer.focus();
-      await composer.evaluate((el) => {
-        el.innerHTML = "";
-        el.textContent = "";
-      });
-      await composer.pressSequentially(testMessage);
-
-      const composerText = await composer.textContent();
-      expect(composerText).toContain(testMessage);
-
-      const replyButton = page.locator('button:has-text("Reply"):not(:has-text("close")):not(:has-text("Close"))');
-      await replyButton.click();
-
-      await page.waitForLoadState("networkidle");
+      await sendReplyMessage(page, "This is a test reply message");
+      await expect(page.getByTestId("message-thread")).toContainText("This is a test reply message");
     });
 
     test("should handle empty reply attempt", async ({ page }) => {
@@ -412,6 +415,35 @@ test.describe("Conversation Actions", () => {
         console.error("Failed to assign conversation to issue:", error);
         await page.keyboard.press("Escape");
       }
+    });
+  });
+
+  test.describe("Auto-Assign on Reply", () => {
+    test("should respect auto-assign preference when replying", async ({ page }) => {
+      await page.goto("/settings/preferences");
+
+      if (await page.locator('[aria-label="Auto-assign on reply Switch"]').isChecked()) {
+        await page.locator('[aria-label="Auto-assign on reply Switch"]').click();
+        await waitForSettingsSaved(page);
+      }
+
+      await page.goto("/unassigned");
+      await page.locator("a[href*='/conversations?id=']").first().click();
+
+      await sendReplyMessage(page, "Auto-assign off test reply message");
+
+      await expect(page.getByRole("button", { name: "Assign yourself" })).toBeVisible();
+
+      await page.goto("/settings/preferences");
+      await page.locator('[aria-label="Auto-assign on reply Switch"]').click();
+      await waitForSettingsSaved(page);
+
+      await page.goto("/unassigned");
+      await page.locator("a[href*='/conversations?id=']").first().click();
+
+      await sendReplyMessage(page, "Auto-assign on test reply message");
+      await expect(page.getByTestId("message-thread")).toContainText("Auto-assign on test reply message");
+      await expect(page.getByRole("button", { name: "Assign yourself" })).not.toBeVisible();
     });
   });
 });
