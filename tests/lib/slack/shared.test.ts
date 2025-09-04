@@ -1,6 +1,7 @@
 import { conversationFactory } from "@tests/support/factories/conversations";
 import { userFactory } from "@tests/support/factories/users";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { db } from "@/db/client";
 import { getConversationById } from "@/lib/data/conversation";
 import { createReply } from "@/lib/data/conversationMessage";
 import { addNote } from "@/lib/data/note";
@@ -30,6 +31,55 @@ vi.mock("@/lib/data/note", () => ({
 describe("handleSlackAction", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  it("assigns conversation to specific user when using assign modal", async () => {
+    const { profile } = await userFactory.createRootUser({
+      userOverrides: {
+        email: "user@example.com",
+      },
+      mailboxOverrides: { slackBotToken: "xoxb-12345678901234567890" },
+    });
+    const { user: assigneeUser } = await userFactory.createRootUser();
+    const { conversation } = await conversationFactory.create({ assignedToId: null });
+
+    const message = {
+      conversationId: conversation.id,
+      slackChannel: "C12345",
+      slackMessageTs: "1234567890.123456",
+    };
+
+    const payload = {
+      type: "view_submission",
+      user: { id: "U12345" },
+      view: {
+        callback_id: "assign_conversation",
+        state: {
+          values: {
+            assign_to: { user: { selected_option: { value: assigneeUser.id } } },
+            note: { message: { value: "Assignment note" } },
+          },
+        },
+      },
+    };
+
+    vi.mocked(findUserViaSlack).mockResolvedValueOnce(profile);
+
+    await handleMessageSlackAction(message, payload);
+
+    const updatedConversation = await getConversationById(conversation.id);
+    expect(updatedConversation).toMatchObject({
+      assignedToId: assigneeUser.id,
+      assignedToAI: false,
+    });
+
+    const events = await db.query.conversationEvents.findMany({
+      where: (conversationEvents, { eq }) => eq(conversationEvents.conversationId, conversation.id),
+    });
+
+    const assignmentEvent = events.find((e) => e.changes?.assignedToId === assigneeUser.id);
+    expect(assignmentEvent).toBeDefined();
+    expect(assignmentEvent!.reason).toBe("Assignment note");
   });
 
   it("opens a Slack modal when the action is respond_in_slack", async () => {
@@ -166,13 +216,14 @@ describe("handleSlackAction", () => {
     });
   });
 
-  it("creates a reply and closes the conversation when the sending method is email_and_close", async () => {
+  it("creates a reply and closes the conversation with auto-assignment when the sending method is email_and_close", async () => {
     const { profile } = await userFactory.createRootUser({
       userOverrides: {
         email: "user@example.com",
       },
       mailboxOverrides: { slackBotToken: "xoxb-12345678901234567890" },
     });
+    profile.preferences = { autoAssignOnReply: true };
     const { conversation } = await conversationFactory.create();
 
     const message = {
@@ -204,6 +255,50 @@ describe("handleSlackAction", () => {
       user: profile,
       close: true,
       slack: { channel: "C12345", messageTs: "1234567890.123456" },
+      shouldAutoAssign: true,
+    });
+  });
+
+  it("creates a reply with auto-assignment when the sending method is email", async () => {
+    const { profile } = await userFactory.createRootUser({
+      userOverrides: {
+        email: "user@example.com",
+      },
+      mailboxOverrides: { slackBotToken: "xoxb-12345678901234567890" },
+    });
+    profile.preferences = { autoAssignOnReply: true };
+    const { conversation } = await conversationFactory.create();
+
+    const message = {
+      conversationId: conversation.id,
+      slackChannel: "C12345",
+      slackMessageTs: "1234567890.123456",
+    };
+
+    vi.mocked(findUserViaSlack).mockResolvedValueOnce(profile);
+
+    const payload = {
+      type: "view_submission",
+      user: { id: "U12345" },
+      view: {
+        state: {
+          values: {
+            reply: { message: { value: "Test reply" } },
+            escalation_actions: { sending_method: { selected_option: { value: "email" } } },
+          },
+        },
+      },
+    };
+
+    await handleMessageSlackAction(message, payload);
+
+    expect(createReply).toHaveBeenCalledWith({
+      conversationId: conversation.id,
+      message: "Test reply",
+      user: profile,
+      close: false,
+      slack: { channel: "C12345", messageTs: "1234567890.123456" },
+      shouldAutoAssign: true,
     });
   });
 
