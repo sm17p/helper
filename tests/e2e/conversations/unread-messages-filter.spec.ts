@@ -13,7 +13,7 @@ test.describe("Unread Messages Filter", () => {
     await filterToggleButton.click();
 
     // Wait for filter panel to be fully visible and interactive
-    await page.waitForSelector('button:has-text("Unread")', { state: "visible" });
+    await expect(page.getByRole("button", { name: "Unread" })).toBeVisible();
   });
 
   test("should show unread messages filter button", async ({ page }) => {
@@ -148,28 +148,25 @@ test.describe("Unread Messages Filter", () => {
   });
 
   test("should update filter count in clear filters button", async ({ page }) => {
-    const unreadFilter = page.locator('button:has-text("Unread")');
+    const unreadFilter = page.getByRole("button", { name: "Unread" });
     await unreadFilter.click();
 
-    const clearButton = page.locator('button:has-text("Clear filters")');
+    await expect(page.getByRole("button", { name: "Filter Toggle" })).toHaveText("(1)");
+
+    const clearButton = page.getByRole("button", { name: "Clear filters" });
     await expect(clearButton).toBeVisible();
 
-    const vipFilter = page.locator('button:has-text("VIP")');
-    await expect(vipFilter).toBeVisible();
+    const vipFilter = page.getByRole("button", { name: "VIP" });
     await vipFilter.click();
-    const vipOnlyOption = page.locator('[role="menuitemradio"]:has-text("VIP only")');
-    await expect(vipOnlyOption).toBeVisible();
-    await vipOnlyOption.click();
+    await page.getByRole("menuitemradio", { name: "VIP only" }).click();
+    await expect(page.getByRole("button", { name: "Filter Toggle" })).toHaveText("(2)");
 
-    // Wait for VIP filter to be applied
-    await page.waitForLoadState("networkidle");
+    await vipFilter.click();
+    await page.getByRole("menuitemradio", { name: "All conversations" }).click();
 
     await clearButton.click();
 
-    await page.waitForTimeout(1000);
-
     await expect(unreadFilter).not.toHaveClass(/bright/);
-
     await expect(clearButton).not.toBeVisible();
 
     await takeDebugScreenshot(page, "filters-cleared.png");

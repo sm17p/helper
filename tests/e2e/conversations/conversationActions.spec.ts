@@ -40,8 +40,6 @@ async function sendReplyMessage(page: Page, message: string, { close }: { close?
 }
 
 test.describe("Conversation Actions", () => {
-  test.describe.configure({ mode: "serial" });
-
   test.beforeEach(async ({ page }) => {
     const openConversation = await getOpenConversation();
 

@@ -193,7 +193,7 @@ test.describe("Conversation Details", () => {
     const subject = await getConversationSubject(page);
     expect(subject.length).toBeGreaterThan(0);
 
-    await expect(page.getByText(subject)).toBeVisible();
+    await expect(page.getByTestId("conversation-subject")).toBeVisible();
 
     const messageCount = await getMessageCount(page);
     expect(messageCount).toBeGreaterThan(0);
@@ -237,6 +237,12 @@ test.describe("Conversation Details", () => {
   });
 
   test("should test scroll functionality in long conversations", async ({ page }) => {
+    // Long conversation
+    await page.goto("/all");
+    await page.getByRole("textbox", { name: "Search conversations" }).fill("billing issue - double charge");
+    const longConversationLink = page.getByRole("link", { name: "creative.pro55@example.com $" });
+    await expect(longConversationLink).toBeVisible();
+    await longConversationLink.click();
     await setupConversation(page);
     await performScrollTest(page);
   });

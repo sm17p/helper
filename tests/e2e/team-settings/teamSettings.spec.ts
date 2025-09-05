@@ -6,8 +6,6 @@ type UserRole = "admin" | "member";
 
 test.use({ storageState: "tests/e2e/.auth/user.json" });
 
-test.describe.configure({ mode: "serial" });
-
 test.describe("Team Settings", () => {
   async function navigateToTeamSettings(page: any) {
     if (page.url().includes("/settings/team")) {
