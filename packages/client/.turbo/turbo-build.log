@@ -1,0 +1,29 @@
+
+
+> @helperai/client@0.4.4 build /Users/yoda/github/antiwork/helper/packages/client
+> tsup
+
+[34mCLI[39m Building entry: {"index":"src/index.ts","auth":"src/auth/index.ts"}
+[34mCLI[39m Using tsconfig: tsconfig.json
+[34mCLI[39m tsup v8.4.0
+[34mCLI[39m Using tsup config: /Users/yoda/github/antiwork/helper/packages/client/tsup.config.ts
+[34mCLI[39m Target: es2022
+[34mCLI[39m Cleaning output folder
+[34mCJS[39m Build start
+[34mESM[39m Build start
+[32mCJS[39m [1mdist/auth.js      [22m[32m3.70 KB[39m
+[32mCJS[39m [1mdist/index.js     [22m[32m17.87 KB[39m
+[32mCJS[39m [1mdist/auth.js.map  [22m[32m4.04 KB[39m
+[32mCJS[39m [1mdist/index.js.map [22m[32m32.21 KB[39m
+[32mCJS[39m ⚡️ Build success in 261ms
+[32mESM[39m [1mdist/auth.mjs      [22m[32m1.95 KB[39m
+[32mESM[39m [1mdist/index.mjs     [22m[32m14.90 KB[39m
+[32mESM[39m [1mdist/auth.mjs.map  [22m[32m3.89 KB[39m
+[32mESM[39m [1mdist/index.mjs.map [22m[32m32.02 KB[39m
+[32mESM[39m ⚡️ Build success in 265ms
+DTS Build start
+DTS ⚡️ Build success in 3841ms
+DTS dist/index.d.ts  22.53 KB
+DTS dist/auth.d.ts   792.00 B
+DTS dist/index.d.mts 22.53 KB
+DTS dist/auth.d.mts  792.00 B
