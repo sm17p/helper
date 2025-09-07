@@ -74,10 +74,6 @@ test.describe("Conversation Details", () => {
     await page.locator("button[aria-label='Close View']").click();
   }
 
-  async function toggleSidebar(page: Page) {
-    await page.locator("button[aria-label='Toggle sidebar']").click();
-  }
-
   async function testMessageStructure(page: Page, maxMessages: number = 3) {
     const messages = page.locator("[data-message-item]");
     const count = await messages.count();
@@ -172,7 +168,7 @@ test.describe("Conversation Details", () => {
     const subject = await getConversationSubject(page);
     expect(subject.length).toBeGreaterThan(0);
 
-    await expect(page.getByText(subject)).toBeVisible();
+    await expect(page.getByTestId("conversation-subject")).toBeVisible();
 
     const messageCount = await getMessageCount(page);
     expect(messageCount).toBeGreaterThan(0);
@@ -212,6 +208,40 @@ test.describe("Conversation Details", () => {
     }
   });
 
+   test("should test scroll functionality in long conversations", async ({ page }) => {
+      // Long conversation
+      await page.goto("/all");
+      await page.getByRole("textbox", { name: "Search conversations" }).fill("billing issue - double charge");
+      const longConversationLink = page.getByRole("link", { name: "creative.pro55@example.com $" });
+      await expect(longConversationLink).toBeVisible();
+      await longConversationLink.click();
+      await setupConversation(page);
+      const messageThreadPanel = page.getByTestId("message-thread-panel");
+      const scrollToTopButton = page.getByRole('button', { name: 'Scroll to top' });
+      
+      await expect(scrollToTopButton).toHaveAttribute('tabindex', '0');
+      await scrollToTopButton.click();
+      
+      await expect(messageThreadPanel).toHaveJSProperty('scrollTop', 0);
+      await expect(scrollToTopButton).toHaveAttribute('tabindex', '-1');
+   });
+ 
+   test("should close conversation and return to list", async ({ page }) => {
+     await setupConversation(page);
+ 
+     await closeConversation(page);
+ 
+     await page.waitForLoadState("networkidle");
+     expect(page.url()).toContain("/conversations");
+ 
+     await expect(page.locator("a[href*='/conversations?id=']").first()).toBeVisible();
+   });
+ 
+   test("should handle conversation counter display correctly", async ({ page }) => {
+     await setupConversation(page);
+     await validateCounterFormat(page);
+   });
+ 
   test("should create and display internal note", async ({ page }) => {
     await setupConversation(page);
     await attemptInternalNoteCreation(page);

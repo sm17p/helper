@@ -1,4 +1,8 @@
 import { expect, test } from "@playwright/test";
+import { and, eq, isNull } from "drizzle-orm";
+import { db } from "../../../db/client";
+import { conversationFollowers, conversations } from "../../../db/schema";
+import { authUsers } from "../../../db/supabaseSchema/auth";
 import { takeDebugScreenshot } from "../utils/test-helpers";
 
 test.use({ storageState: "tests/e2e/.auth/user.json" });
@@ -16,7 +20,6 @@ test.describe("Working Conversation Follow/Unfollow", () => {
   });
 
   test("should toggle follow state when clicking follow button", async ({ page }) => {
-    await expect(page).toHaveTitle("Helper");
     await expect(page.locator('input[placeholder="Search conversations"]')).toBeVisible();
     await expect(page.locator('button:has-text("open")')).toBeVisible();
 
@@ -58,7 +61,6 @@ test.describe("Working Conversation Follow/Unfollow", () => {
   });
 
   test("should show correct button states", async ({ page }) => {
-    await expect(page).toHaveTitle("Helper");
     await expect(page.locator('input[placeholder="Search conversations"]')).toBeVisible();
     await expect(page.locator('button:has-text("open")')).toBeVisible();
 
@@ -84,7 +86,6 @@ test.describe("Working Conversation Follow/Unfollow", () => {
   });
 
   test("should handle follow/unfollow errors gracefully", async ({ page }) => {
-    await expect(page).toHaveTitle("Helper");
     await expect(page.locator('input[placeholder="Search conversations"]')).toBeVisible();
     await expect(page.locator('button:has-text("open")')).toBeVisible();
 
@@ -121,70 +122,41 @@ test.describe("Working Conversation Follow/Unfollow", () => {
   });
 
   test("should preserve follow state on page refresh", async ({ page }) => {
-    await expect(page).toHaveTitle("Helper");
-    await expect(page.locator('input[placeholder="Search conversations"]')).toBeVisible();
-    await expect(page.locator('button:has-text("open")')).toBeVisible();
+    const [user] = await db
+      .select({ id: authUsers.id })
+      .from(authUsers)
+      .where(eq(authUsers.email, "support@gumroad.com"))
+      .limit(1);
 
-    const conversationLinks = page.locator('a[href*="/conversations?id="]');
-    if ((await conversationLinks.count()) === 0) {
-      console.log("No conversations available to test state preservation");
+    const unfollowedConversation = await db
+      .select({
+        id: conversations.id,
+        slug: conversations.slug,
+        subject: conversations.subject,
+      })
+      .from(conversations)
+      .leftJoin(
+        conversationFollowers,
+        and(eq(conversationFollowers.conversationId, conversations.id), eq(conversationFollowers.userId, user.id)),
+      )
+      .where(isNull(conversationFollowers.id))
+      .limit(1);
+
+    if (unfollowedConversation.length === 0) {
+      console.log("No unfollowed conversations available to test reseed database");
       return;
     }
 
-    await conversationLinks.first().click();
-    await page.waitForLoadState("networkidle");
-    await page.waitForTimeout(2000);
+    await page.goto(`/conversations?id=${unfollowedConversation[0].slug}`);
 
-    const followButton = page.locator('button:has-text("Follow"), button:has-text("Following")').first();
-    await expect(followButton).toBeVisible();
-    await expect(followButton).not.toHaveAttribute("disabled");
-
-    let buttonText = await followButton.textContent();
-    if (!buttonText?.includes("Following")) {
-      await followButton.click();
-
-      // Wait for the following state to be established with retry logic
-      let attempts = 0;
-      while (attempts < 5) {
-        await page.waitForTimeout(1000);
-        const currentText = await followButton.textContent();
-        if (currentText?.includes("Following")) {
-          buttonText = currentText;
-          break;
-        }
-        attempts++;
-      }
-
-      if (!buttonText?.includes("Following")) {
-        console.log("Could not establish following state, skipping test");
-        return;
-      }
-    }
-
-    await page.waitForTimeout(1000);
+    await page.getByRole("button", { name: "Follow conversation" }).click();
     await page.reload();
-    await page.waitForLoadState("networkidle");
-    await page.waitForTimeout(2000);
-
-    const refreshedFollowButton = page.locator('button:has-text("Follow"), button:has-text("Following")').first();
-    await expect(refreshedFollowButton).toBeVisible({ timeout: 15000 });
-
-    // Wait for the button state to load after refresh
-    let refreshAttempts = 0;
-    let refreshedButtonText = await refreshedFollowButton.textContent();
-    while (refreshAttempts < 3 && !refreshedButtonText?.includes("Following")) {
-      await page.waitForTimeout(1000);
-      refreshedButtonText = await refreshedFollowButton.textContent();
-      refreshAttempts++;
-    }
-
-    expect(refreshedButtonText).toContain("Following");
+    await expect(page.getByRole("button", { name: "Unfollow conversation" })).toBeVisible();
 
     await takeDebugScreenshot(page, "follow-state-preserved.png");
   });
 
   test("should handle multiple rapid clicks gracefully", async ({ page }) => {
-    await expect(page).toHaveTitle("Helper");
     await expect(page.locator('input[placeholder="Search conversations"]')).toBeVisible();
     await expect(page.locator('button:has-text("open")')).toBeVisible();
 

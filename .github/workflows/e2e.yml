@@ -17,12 +17,9 @@ jobs:
   e2e:
     runs-on: ${{ github.repository == 'antiwork/helper' && 'ubicloud-standard-2' || 'ubuntu-latest' }}
     timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        shardIndex: [1, 2, 3, 4]
     env:
       CI: true
+      PLAYWRIGHT_USE_PREBUILT: 1
       OPENAI_API_KEY: test-openai-api-key
       FIRECRAWL_API_KEY: test-firecrawl-api-key
     steps:
@@ -59,13 +56,16 @@ jobs:
       - name: Setup E2E test environment
         run: ./scripts/setup-e2e-tests.sh
 
+      - name: Build next
+        run: pnpm with-test-env next build
+
       - name: Run full Playwright suite
-        run: ./scripts/e2e.sh playwright test --shard=${{ matrix.shardIndex }}/4
+        run: ./scripts/e2e.sh
 
       - name: Upload Playwright HTML report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report-shard-${{ matrix.shardIndex }}-of-4
+          name: playwright-report
           path: playwright-report/
           retention-days: 30
