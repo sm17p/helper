@@ -77,9 +77,9 @@ test.describe("Settings - Common Issues", () => {
     await page.getByRole("button", { name: "Save" }).click();
 
     await page.getByRole("button", { name: "Create 2 issues" }).click();
-    
+
     await expect(page.getByText("Created 2 common issues from your conversations")).toBeVisible();
-    await expect(page.getByRole('dialog')).not.toBeVisible();
+    await expect(page.getByRole("dialog")).not.toBeVisible();
     await expect(page.getByText("Custom description for this issue")).toBeVisible();
   });
 });

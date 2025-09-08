@@ -7,7 +7,8 @@ test.describe("Unread Messages Filter", () => {
   test.beforeEach(async ({ page }) => {
     await Promise.all([
       page.waitForResponse(
-        (response) => response.url().includes("/api/trpc/lambda/mailbox.conversations.list") && response.status() === 200,
+        (response) =>
+          response.url().includes("/api/trpc/lambda/mailbox.conversations.list") && response.status() === 200,
       ),
       page.goto("/mine"),
     ]);
@@ -115,7 +116,6 @@ test.describe("Unread Messages Filter", () => {
     const unreadFilter = page.getByRole("button", { name: "Unread" });
     await unreadFilter.click();
 
-    
     const filterButton = page.getByRole("button", { name: "Filter Toggle" });
     await expect(filterButton).toHaveText("(1)");
 
