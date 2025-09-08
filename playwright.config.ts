@@ -33,7 +33,7 @@ export default defineConfig({
 
     /* Extended timeouts for local SSL setup */
     actionTimeout: 15000,
-    navigationTimeout: process.env.CI ? 3000 : 45000,
+    navigationTimeout: process.env.CI ? 15000 : 45000,
   },
   timeout: process.env.CI ? 30000 : 60000,
 

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 set -o allexport
 source .env.test
 if [ "$CI" != "true" ] && [ -f ".env.test.local" ]; then
@@ -7,9 +9,9 @@ if [ "$CI" != "true" ] && [ -f ".env.test.local" ]; then
 fi
 set +o allexport
 
-set -e
-
-
+if [ "$CI" = "true" ]; then
+  export PLAYWRIGHT_USE_PREBUILT=1
+fi
 
 function kill_process_listening_on_port {
   lsof -i :$1 | grep LISTEN | awk '{print $2}' | xargs -r kill -9
