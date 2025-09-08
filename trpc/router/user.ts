@@ -14,8 +14,7 @@ import { captureExceptionAndLog } from "@/lib/shared/sentry";
 import { createAdminClient } from "@/lib/supabase/server";
 import { protectedProcedure, publicProcedure } from "../trpc";
 
-const safeToSendBackOTP =
-  !env.VERCEL && ["http://localhost:3020", "https://helperai.dev"].includes(env.NEXT_PUBLIC_DEV_HOST);
+const safeToSendBackOTP = !env.VERCEL && env.AUTH_URL === "https://helperai.dev";
 
 export const userRouter = {
   startSignIn: publicProcedure.input(z.object({ email: z.string() })).mutation(async ({ input }) => {
