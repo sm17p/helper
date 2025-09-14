@@ -15,8 +15,11 @@ concurrency:
 
 jobs:
   e2e:
-    runs-on: ${{ github.repository == 'antiwork/helper' && 'ubicloud-standard-4' || 'ubuntu-latest' }}
-    timeout-minutes: 60
+    strategy:
+      matrix:
+        runs-on: [  buildjet-8vcpu-ubuntu-2204, buildjet-16vcpu-ubuntu-2204 ]
+    name: Test - ${{matrix.runs-on}}
+    runs-on: ${{matrix.runs-on}}
     env:
       CI: true
       OPENAI_API_KEY: test-openai-api-key
@@ -38,7 +41,7 @@ jobs:
           node-version-file: ".node-version"
 
       - name: Cache pnpm store
-        uses: actions/cache@v4
+        uses: buildjet/cache@v3
         with:
           path: ~/.pnpm-store
           key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
@@ -47,7 +50,7 @@ jobs:
 
       - name: Cache Playwright browsers
         id: playwright-cache
-        uses: actions/cache@v4
+        uses: buildjet/cache@v3
         with:
           path: ~/.cache/ms-playwright
           key: playwright-browsers-${{ runner.os }}-v1
@@ -58,7 +61,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Cache Next.js build cache
-        uses: actions/cache@v4
+        uses: buildjet/cache@v3
         with:
           path: |
             .next/cache
