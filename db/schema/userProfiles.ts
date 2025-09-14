@@ -37,14 +37,5 @@ export const userProfilesRelations = relations(userProfiles, ({ one }) => ({
   }),
 }));
 
-export type BasicUserProfile = {
-  id: string;
-  displayName: string | null;
-  email: string | null;
-  preferences?: {
-    confetti?: boolean;
-    disableNextTicketPreview?: boolean;
-    autoAssignOnReply?: boolean;
-  } | null;
-};
+export type BasicUserProfile = { id: string; displayName: string | null; email: string | null };
 export type FullUserProfile = typeof userProfiles.$inferSelect & { email: string | null };
