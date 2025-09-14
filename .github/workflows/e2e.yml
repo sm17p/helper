@@ -17,14 +17,14 @@ jobs:
   e2e:
     strategy:
       matrix:
-        runs-on: [  buildjet-8vcpu-ubuntu-2204, buildjet-16vcpu-ubuntu-2204 ]
+        runs-on: [  buildjet-4vcpu-ubuntu-2204, buildjet-8vcpu-ubuntu-2204 ]
     name: Test - ${{matrix.runs-on}}
     runs-on: ${{matrix.runs-on}}
     env:
       CI: true
       OPENAI_API_KEY: test-openai-api-key
       FIRECRAWL_API_KEY: test-firecrawl-api-key
-      NODE_OPTIONS: --max_old_space_size=8192
+      NODE_OPTIONS: ${{ matrix.runs-on == 'buildjet-4vcpu-ubuntu-2204' && '--max_old_space_size=8192' || '--max_old_space_size=16384' }} 
       PNPM_STORE_PATH: ~/.pnpm-store
     steps:
       - name: Checkout repository
