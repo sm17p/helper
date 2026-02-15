@@ -10,7 +10,7 @@
     "build:preview": "pnpm run build && pnpm run db:prod:migrate && pnpm tsx --conditions=react-server ./db/seeds/index.ts",
     "clean": "git clean -xdf .cache .next node_modules",
     "deploy": "pnpm run build && pnpm run db:prod:migrate",
-    "postinstall": "pnpm run-on-packages build",
+    "postinstall": "if [ \"$CI\" != true ]; then pnpm run-on-packages build; fi",
     "db:check": "pnpm services:start && pnpm run with-dev-env drizzle-kit check --config ./db/drizzle.config.ts",
     "db:generate": "pnpm services:start && pnpm run with-dev-env drizzle-kit generate --config ./db/drizzle.config.ts",
     "db:migrate": "pnpm services:start && pnpm run with-dev-env drizzle-kit migrate --config ./db/drizzle.config.ts && pnpm db:setup-cron",
@@ -49,7 +49,7 @@
     "nginx:stop": "docker stop helperai-nginx",
     "ensure-ssl-certificates": "bash scripts/ensure-ssl-certificates.sh",
     "generate-ssl-certificates": "bash scripts/generate-ssl-certificates.sh",
-    "run-on-packages": "pnpm run --filter=!helperai --if-present --workspace-concurrency=1",
+    "run-on-packages": "pnpm run --filter=!helperai --if-present",
     "with-dev-env": "dotenv -e ./.env.development -e ./.env.development.local -e ./.env.local --",
     "with-test-env": "dotenv -e ./.env.test -e ./.env.test.local --"
   },
