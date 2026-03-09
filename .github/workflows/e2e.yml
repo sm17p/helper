@@ -80,6 +80,7 @@ jobs:
       - name: Run full Playwright suite
         run: ./scripts/e2e.sh
 
+
       - name: Upload Playwright HTML report
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
