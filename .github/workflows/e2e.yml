@@ -23,6 +23,7 @@ jobs:
       FIRECRAWL_API_KEY: test-firecrawl-api-key
       NODE_OPTIONS: --max_old_space_size=8192
       PNPM_STORE_PATH: ~/.pnpm-store
+      SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr.io
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
