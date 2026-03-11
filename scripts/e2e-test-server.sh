@@ -2,6 +2,9 @@
 
 set -e
 
+# Set NODE_ENV to test so Next.js loads .env.test instead of .env.development
+export NODE_ENV=${NODE_ENV:-test}
+
 set -o allexport
 source .env.test
 if [ "$CI" != "true" ] && [ -f ".env.test.local" ]; then
