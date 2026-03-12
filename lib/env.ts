@@ -45,11 +45,11 @@ export const env = createEnv({
     // Set these when deploying if you're not using Vercel with the Supabase integration
     AUTH_URL: z.string().url().default(defaultRootUrl), // The root URL of the app; legacy name which was required by next-auth
     POSTGRES_URL: defaultUnlessDeployed(
-      z.string().url(),
+      z.string().startsWith("postgresql://"),
       `postgresql://postgres:postgres@127.0.0.1:${process.env.LOCAL_SUPABASE_DB_PORT}/postgres`,
     ),
     POSTGRES_URL_NON_POOLING: defaultUnlessDeployed(
-      z.string().url(),
+      z.string().startsWith("postgresql://"),
       // Same as POSTGRES_URL unless using Supabase with built-in pooling
       `postgresql://postgres:postgres@127.0.0.1:${process.env.LOCAL_SUPABASE_DB_PORT}/postgres`,
     ),

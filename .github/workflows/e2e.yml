@@ -22,7 +22,7 @@ jobs:
       OPENAI_API_KEY: test-openai-api-key
       FIRECRAWL_API_KEY: test-firecrawl-api-key
       NODE_OPTIONS: --max_old_space_size=8192
-      PNPM_STORE_PATH: ~/.pnpm-store
+      SUPABASE_INTERNAL_IMAGE_REGISTRY: ghcr.io
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -36,14 +36,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version-file: ".node-version"
-
-      - name: Cache pnpm store
-        uses: actions/cache@v4
-        with:
-          path: ~/.pnpm-store
-          key: pnpm-store-${{ runner.os }}-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            pnpm-store-${{ runner.os }}-
+          cache: "pnpm"
 
       - name: Cache Playwright browsers
         id: playwright-cache
@@ -80,7 +73,7 @@ jobs:
       - name: Run full Playwright suite
         run: ./scripts/e2e.sh
 
-      - name: Upload Playwright HTML report
+      - name: Upload Playwright HTML report 2
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
